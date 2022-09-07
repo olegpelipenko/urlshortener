@@ -12,12 +12,11 @@ html2text==2018.1.9
 idna==2.7
 importlib-metadata==0.19
 itsdangerous==1.1.0
-Jinja2==2.10.1
+Jinja2==2.10.3
 Markdown==3.0.1
 MarkupSafe==1.1.1
 marshmallow==3.0.0rc9
 more-itertools==7.2.0
-numpy==1.17.0
 packaging==19.1
 pbr==5.4.2
 pluggy==0.12.0

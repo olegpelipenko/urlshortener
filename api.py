@@ -1,67 +1,109 @@
-from flask import Flask, request, jsonify, make_response, logging, g, current_app
-import platform
-from marshmallow import ValidationError
+from flask import Flask, request, make_response, jsonify, logging
 from functools import wraps
-from typing import Dict
 from appdirs import *
+from marshmallow import ValidationError
 
-import os
-import datetime
-import logging
-import atexit
+import string, os, json, random
+
+import cache, stats
 
 
+urls_cache = {}
+host_name = 'http://urlshortener.sh'
 
 def create_app():
-    app_name = "urlshortener-api"
-    app_author = "entrant"
-
-    if platform.system() is 'Linux':
-        app_dir = os.path.join('/opt/', app_name)
-    else:
-        app_dir = user_data_dir(app_name, app_author)
-    logs_dir = os.path.join(app_dir, "logs")
-    if not os.path.exists(logs_dir):
-        os.makedirs(logs_dir)
-
-    print(logs_dir)
-
-    logging.basicConfig(
-        filename=os.path.join(logs_dir, "{}.log".format(datetime.datetime.now().isoformat(timespec='hours'))),
-        filemode='a',
-        level=logging.DEBUG,
-        format='[%(asctime)s] %(process)d %(levelname)s %(module)s: %(message)s',
-    )
     flask_app = Flask(__name__)
     return flask_app
-
 
 app = create_app()
 
 
+def response_wrap(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+
+        except ValidationError as e:
+            app.logger.error(e.messages)
+            return make_response(jsonify({'error': e.messages}), 400)
+
+        except Exception as e:
+            app.logger.error(e)
+            return make_response(jsonify({'error': e.args}), 500)
+
+    return wrapper
+
+
+def id_generator(size=6, chars=string.ascii_uppercase + string.digits):
+    return ''.join(random.choice(chars) for _ in range(size))
+    #return 'aaa'
+
+
+def get_long_url():
+    json_data = request.get_json()
+    if "long_url" not in json_data:
+        raise ValidationError(message="no input data provided")
+
+    return json_data["long_url"]
+
+
 @app.route("/urls/", methods=['POST'])
+@response_wrap
 def urls_create():
-    return
+    long_url = get_long_url()
+
+    short_code = id_generator()
+    cache.store_short_url(short_code, long_url)
+    
+    return make_response(
+        "{}/urls/{}".format(host_name, short_code), 
+        200
+    )
 
 
-@app.route("/urls/<string:short_code", methods=['GET'])
-def urls_get():
-    return
+@app.route("/urls/<short_code>", methods=['GET'])
+@response_wrap
+def urls_get(short_code):
+    if cache.is_short_code_exists(short_code):
+        raise ValidationError(message="bad short_code")
+    
+    stats.make_visit(short_code)
+
+    return make_response(cache.get_long_url[short_code], 200)
 
 
-@app.route("/urls/<string:short_code>/stats", methods=['GET'])
-def urls_stats():
-    return
+@app.route("/urls/<short_code>/stats", methods=['GET'])
+@response_wrap
+def urls_stats(short_code):
+    return make_response(
+        json.dumps({'visits': stats.get_stats(short_code),}),
+        200
+    )
 
 
-@app.route("/urls/<string:short_code>", methods=['PUT'])
-def urls_put():
-    return
+@app.route("/urls/<short_code>", methods=['PUT'])
+@response_wrap
+def urls_put(short_code):
+    if cache.is_short_code_exists(short_code):
+        raise ValidationError(message="bad short_code")
+
+    long_url = get_long_url()
+    cache.store_short_url(short_code, long_url)
+
+    return make_response('', 200)
 
 
-@app.route("/urls/<string:short_code>", methods=['DELETE'])
-def urls_delete():
-    return
+@app.route("/urls/<short_code>", methods=['DELETE'])
+@response_wrap
+def urls_delete(short_code):
+    if short_code not in urls_cache:
+        raise ValidationError(message="bad short_code")
+
+    cache.remove_short_code(short_code)
+    stats.cleanup_visits(short_code)
+
+    return make_response('', 200)
 
 
 if __name__ == "__main__":
