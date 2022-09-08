@@ -8,7 +8,6 @@ import string, os, json, random
 import cache, stats
 
 
-urls_cache = {}
 host_name = 'http://urlshortener.sh'
 
 def create_app():
@@ -97,7 +96,7 @@ def urls_put(short_code):
 @app.route("/urls/<short_code>", methods=['DELETE'])
 @response_wrap
 def urls_delete(short_code):
-    if short_code not in urls_cache:
+    if cache.is_short_code_exists(short_code):
         raise ValidationError(message="bad short_code")
 
     cache.remove_short_code(short_code)
